@@ -367,6 +367,20 @@ func ParseTypeInfo(itype interface{}) (*GenTypeInfo, error) {
 			ft = ft.Elem()
 			pointer = true
 		}
+		genericParam := out.toGenericTypeParam(ft.String())
+		if genericParam != "" {
+			// in this case, the generic placeholder type must be a pointer, but it's
+			// not treated as a pointer for the purpose of being nullable
+			pointer = false
+		}
+		if ft.Kind() == reflect.Ptr {
+			ft = ft.Elem()
+			pointer = true
+			genericParam = out.toGenericTypeParam(ft.String())
+			if genericParam == "" {
+				panic("pointer to pointer not supported")
+			} // else it's a generic type and it should be nullable
+		}
 
 		mapk := f.Name
 		usrMaxLen := NoUsrMaxLen
@@ -415,7 +429,7 @@ func ParseTypeInfo(itype interface{}) (*GenTypeInfo, error) {
 
 		out.Fields = append(out.Fields, Field{
 			Name:         f.Name,
-			GenericParam: out.toGenericTypeParam(f.Type.String()),
+			GenericParam: genericParam,
 			MapKey:       mapk,
 			Pointer:      pointer,
 			Type:         ft,
@@ -913,12 +927,12 @@ func (t *{{ .Name }}) MarshalCBOR(w io.Writer) error {
 						return err
 					}
 				} else {
-					if err := (*{{ .Name }}).ToCBOR(cw); err != nil {
+					if err := (*{{ .Name }}).MarshalCBOR(cw); err != nil {
 						return err
 					}
 				}
 {{ else }}
-				if err := {{ .Name }}.ToCBOR(cw); err != nil {
+				if err := {{ .Name }}.MarshalCBOR(cw); err != nil {
 					return err
 				}
 {{ end }}`)
@@ -1724,9 +1738,9 @@ func (t *{{ .Name}}) UnmarshalCBOR(r io.Reader) (err error) {
 						if err := cr.UnreadByte(); err != nil {
 							return err
 						} {{ end }}
-						var value {{ .GenericParam }}
-						var err error
-						if value, err = value.FromCBOR(cr); err != nil {
+						var tv {{ .GenericParam }}
+						value := tv.New()
+						if err := value.UnmarshalCBOR(cr); err != nil {
 							return xerrors.Errorf("failed to read field: %w", err)
 						} {{ if .Pointer }}
 						{{ .Name }} = &value

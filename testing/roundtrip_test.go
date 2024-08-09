@@ -792,18 +792,22 @@ func ptr[T any](v T) *T {
 
 func TestGenerics(t *testing.T) {
 	cba1 := CborByteArray([]byte("hello"))
+	cba1p := &cba1
 	cba2 := CborByteArray([]byte("world"))
+	cba2p := &cba2
 	cbi1 := CborInt(456)
+	cbi1p := &cbi1
 	cbi2 := CborInt(789)
+	cbi2p := &cbi2
 
 	t.Run("Simple", func(t *testing.T) {
-		gs := GenericStruct[CborByteArray, CborInt]{
+		gs := GenericStruct[*CborByteArray, *CborInt]{
 			Boop:   123,
-			Thing:  cba1,
-			Thing2: cbi1,
-			Sub: SubGenericStruct[CborByteArray, CborInt]{
-				Sub1: &cba2,
-				Sub2: &cbi2,
+			Thing:  cba1p,
+			Thing2: cbi1p,
+			Sub: SubGenericStruct[*CborByteArray, *CborInt]{
+				Sub1: &cba2p,
+				Sub2: &cbi2p,
 				Bam:  "bam!",
 			},
 		}
@@ -830,7 +834,7 @@ func TestGenerics(t *testing.T) {
 			t.Fatalf("expected %x, got %x", expected, buf.Bytes())
 		}
 
-		var out GenericStruct[CborByteArray, CborInt]
+		var out GenericStruct[*CborByteArray, *CborInt]
 		if err := (&out).UnmarshalCBOR(buf); err != nil {
 			t.Fatal(err)
 		}
@@ -841,11 +845,11 @@ func TestGenerics(t *testing.T) {
 	})
 
 	t.Run("With nils", func(t *testing.T) {
-		gs := GenericStruct[CborByteArray, CborInt]{
+		gs := GenericStruct[*CborByteArray, *CborInt]{
 			Boop:   123,
-			Thing:  nil, // should be zero-length byte array
-			Thing2: cbi1,
-			Sub: SubGenericStruct[CborByteArray, CborInt]{
+			Thing:  &CborByteArray{},
+			Thing2: cbi1p,
+			Sub: SubGenericStruct[*CborByteArray, *CborInt]{
 				Sub1: nil,
 				Sub2: nil,
 				Bam:  "bam!",
@@ -872,15 +876,11 @@ func TestGenerics(t *testing.T) {
 			t.Fatalf("expected %x, got %x", expected, buf.Bytes())
 		}
 
-		var out GenericStruct[CborByteArray, CborInt]
+		var out GenericStruct[*CborByteArray, *CborInt]
 		if err := (&out).UnmarshalCBOR(buf); err != nil {
 			t.Fatal(err)
 		}
 
-		if len(out.Thing) != 0 {
-			t.Fatal("expected zero-length byte array")
-		}
-		out.Thing = nil // make it nil so we can compare
 		if !cmp.Equal(gs, out) {
 			t.Fatal("not equal")
 		}
@@ -899,7 +899,7 @@ func TestGenerics(t *testing.T) {
 			    64                                            #     string(4)
 			      62616d21                                    #       "bam!"
 		*/
-		var out GenericStruct[CborByteArray, CborInt]
+		var out GenericStruct[*CborByteArray, *CborInt]
 		err := (&out).UnmarshalCBOR(bytes.NewReader(errBytes))
 		if err == nil {
 			t.Fatal("expected error")
@@ -928,33 +928,9 @@ func TestGenerics(t *testing.T) {
 	})
 }
 
-// Make CborByteArray, as CBORSerializer, conform to CBORGeneric
-
-func (t CborByteArray) FromCBOR(r io.Reader) (CborByteArray, error) {
-	ci := new(CborByteArray)
-	if err := ci.UnmarshalCBOR(r); err != nil {
-		return nil, err
-	}
-	return *ci, nil
-}
-
-func (t CborByteArray) ToCBOR(w io.Writer) error {
-	return t.MarshalCBOR(w)
-}
-
-// Make CborInt, as CBORSerializer, conform to CBORGeneric
-
-func (t CborInt) FromCBOR(r io.Reader) (CborInt, error) {
-	ci := new(CborInt)
-	if err := ci.UnmarshalCBOR(r); err != nil {
-		return CborInt(0), err
-	}
-	return *ci, nil
-}
-
-func (t CborInt) ToCBOR(w io.Writer) error {
-	return t.MarshalCBOR(w)
-}
+// Make CborByteArray and CborInt, as CBORSerializers, conform to CBORGeneric
+func (t *CborByteArray) New() *CborByteArray { return new(CborByteArray) }
+func (t *CborInt) New() *CborInt             { return new(CborInt) }
 
 // TODO: we can't generate a typed scalar because UnmarshalCBOR wants to make a zero value with
 // type{}. This is the generated code but with zero value fixed.
